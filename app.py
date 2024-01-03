@@ -153,31 +153,48 @@ def search_venues():
 @app.route("/venues/<int:venue_id>")
 def show_venue(venue_id):
     venue = Venue.query.filter_by(id=venue_id).first()
-    upcoming_shows_count = len(
-        [show for show in venue.shows if show.start_time > datetime.now()]
-    )
-    past_shows_count = len(
-        [show for show in venue.shows if show.start_time < datetime.now()]
-    )
+
     upcoming_shows = []
     past_shows = []
 
-    for show in venue.shows:
-        db_data = (
-            db.session.query(Artist.id, Artist.name, Artist.image_link)
-            .filter_by(id=show.artist_id)
-            .first()
-        )
-        artist = {
-            "artist_id": db_data.id,
-            "artist_name": db_data.name,
-            "artist_image_link": db_data.image_link,
+    past = (
+        db.session.query(Artist.id, Artist.name, Artist.image_link, Show.start_time)
+        .join(Show)
+        .join(Venue)
+        .filter(Show.venue_id == venue_id)
+        .filter(Show.start_time < datetime.now())
+        .all()
+    )
+
+    for show in past:
+        obj = {
+            "artist_id": show.id,
+            "artist_name": show.name,
+            "artist_image_link": show.image_link,
             "start_time": str(show.start_time),
         }
-        if show.start_time > datetime.now():
-            upcoming_shows.append(artist)
-        else:
-            past_shows.append(artist)
+        past_shows.append(obj)
+
+    up_coming = (
+        db.session.query(Artist.id, Artist.name, Artist.image_link, Show.start_time)
+        .join(Show)
+        .join(Venue)
+        .filter(Show.venue_id == venue_id)
+        .filter(Show.start_time > datetime.now())
+        .all()
+    )
+
+    for show in up_coming:
+        obj = {
+            "artist_id": show.id,
+            "artist_name": show.name,
+            "artist_image_link": show.image_link,
+            "start_time": str(show.start_time),
+        }
+        upcoming_shows.append(obj)
+
+    upcoming_shows_count = len(upcoming_shows)
+    past_shows_count = len(past_shows)
 
     data = {
         "id": venue.id,
@@ -243,15 +260,13 @@ def create_venue_submission():
         db.session.add(new_venue)
         db.session.commit()
 
-        flash("Venue " + request.form["name"] + " was successfully listed!")
+        flash("Venue " + new_venue.name + " was successfully listed!")
 
     except Exception as e:
         print(e)
         error = True
 
-        flash(
-            "An error occurred. Venue " + request.form["name"] + " could not be listed."
-        )
+        flash("An error occurred. Venue " + new_venue.name + " could not be listed.")
 
     finally:
         db.session.close()
@@ -292,31 +307,47 @@ def search_artists():
 @app.route("/artists/<int:artist_id>")
 def show_artist(artist_id):
     artist = Artist.query.filter_by(id=artist_id).first()
-    upcoming_shows_count = len(
-        [show for show in artist.shows if show.start_time > datetime.now()]
-    )
-    past_shows_count = len(
-        [show for show in artist.shows if show.start_time < datetime.now()]
-    )
     upcoming_shows = []
     past_shows = []
 
-    for show in artist.shows:
-        db_data = (
-            db.session.query(Venue.id, Venue.name, Venue.image_link)
-            .filter_by(id=show.artist_id)
-            .first()
-        )
-        venue = {
-            "venue_id": db_data.id,
-            "venue_name": db_data.name,
-            "venue_image_link": db_data.image_link,
+    past = (
+        db.session.query(Venue.id, Venue.name, Venue.image_link, Show.start_time)
+        .join(Show)
+        .join(Artist)
+        .filter(Show.artist_id == artist_id)
+        .filter(Show.start_time < datetime.now())
+        .all()
+    )
+
+    for show in past:
+        obj = {
+            "venue_id": show.id,
+            "venue_name": show.name,
+            "venue_image_link": show.image_link,
             "start_time": str(show.start_time),
         }
-        if show.start_time > datetime.now():
-            upcoming_shows.append(venue)
-        else:
-            past_shows.append(venue)
+        past_shows.append(obj)
+
+    up_coming = (
+        db.session.query(Venue.id, Venue.name, Venue.image_link, Show.start_time)
+        .join(Show)
+        .join(Artist)
+        .filter(Show.artist_id == artist_id)
+        .filter(Show.start_time > datetime.now())
+        .all()
+    )
+
+    for show in up_coming:
+        obj = {
+            "venue_id": show.id,
+            "venue_name": show.name,
+            "venue_image_link": show.image_link,
+            "start_time": str(show.start_time),
+        }
+        upcoming_shows.append(obj)
+
+    upcoming_shows_count = len(upcoming_shows)
+    past_shows_count = len(past_shows)
 
     data = {
         "id": artist.id,
@@ -341,9 +372,7 @@ def show_artist(artist_id):
 #  ----------------------------------------------------------------
 @app.route("/artists/<int:artist_id>/edit", methods=["GET"])
 def edit_artist(artist_id):
-    form = ArtistForm()
     artist = Artist.query.filter_by(id=artist_id).first()
-
     form = ArtistForm(obj=artist)
     return render_template("forms/edit_artist.html", form=form, artist=artist)
 
@@ -362,7 +391,14 @@ def edit_artist_submission(artist_id):
     artist.seeking_venue = request.form.get("seeking_venue") == "y"
     artist.seeking_description = request.form.get("seeking_description")
 
-    db.session.commit()
+    try:
+        db.session.commit()
+        flash("Artist " + artist.name + " was successfully updated!")
+    except:
+        db.session.rollback()
+        flash("An error occurred. Artist " + artist.name + " could not be updated.")
+    finally:
+        db.session.close()
 
     return redirect(url_for("show_artist", artist_id=artist_id))
 
@@ -391,14 +427,10 @@ def edit_venue_submission(venue_id):
     venue.seeking_description = request.form.get("seeking_description")
     try:
         db.session.commit()
-        flash("Venue " + request.form["name"] + " was successfully updated!")
+        flash("Venue " + venue.name + " was successfully updated!")
     except:
         db.session.rollback()
-        flash(
-            "An error occurred. Venue "
-            + request.form["name"]
-            + " could not be updated."
-        )
+        flash("An error occurred. Venue " + venue.name + " could not be updated.")
     finally:
         db.session.close()
     return redirect(url_for("show_venue", venue_id=venue_id))
